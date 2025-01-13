@@ -1,10 +1,8 @@
 package tk.zwander.common.util
 
-import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.utils.io.core.*
 
 /**
  * Make a firmware string given the PDA and CSC versions.
@@ -22,16 +20,9 @@ fun makeFirmwareString(pda: String, csc: String): String {
  * @param region the device region.
  */
 suspend fun getFirmwareHistoryString(model: String, region: String): String? {
-    val origUrl = generateProperUrl(
-        useProxy,
-        "https://www.odinrom.com/samsung/${model}-${region}/"
-    )
-    val client = HttpClient {
-        followRedirects = true
-        expectSuccess = false
-    }
+    val origUrl = "https://www.odinrom.com/samsung/${model}-${region}/"
 
-    val response = client.get {
+    val response = globalHttpClient.get {
         userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36")
         url(origUrl)
     }
@@ -40,11 +31,9 @@ suspend fun getFirmwareHistoryString(model: String, region: String): String? {
 }
 
 suspend fun getFirmwareHistoryStringFromSamsung(model: String, region: String): String? {
-    return client.use {
-        it.get(
-            urlString = generateProperUrl(useProxy, "https://fota-cloud-dn.ospserver.net:443/firmware/${region}/${model}/version.xml")
-        ) {
-            userAgent("Kies2.0_FUS")
-        }
+    return globalHttpClient.get(
+        urlString = "https://fota-cloud-dn.ospserver.net:443/firmware/${region}/${model}/version.xml",
+    ) {
+        userAgent("Kies2.0_FUS")
     }.run { if (status.isSuccess()) bodyAsText() else null }
 }

@@ -1,76 +1,39 @@
-val versionCode by extra(28)
-val versionName by extra("1.14.1")
+val versionCode by extra(81)
+val versionName by extra("1.19.7")
 
-val compileSdk by extra(33)
-val targetSdk by extra(33)
+val compileSdk by extra(35)
+val targetSdk by extra(35)
 val minSdk by extra(24)
 
-val javaVersionEnum by extra(JavaVersion.VERSION_17)
+val javaVersionEnum by extra(JavaVersion.VERSION_21)
 
 val groupName by extra("tk.zwander")
 val packageName by extra("tk.zwander.samsungfirmwaredownloader")
 val appName by extra("Bifrost")
 
-val skikoVersion by extra("0.7.58")
-val androidComposeVersion by extra("1.4.0")
+val bugsnagJvmApiKey by extra("a5b9774e86bc615c2e49a572b8313489")
+val bugsnagAndroidApiKey by extra("3e0ed592029da1d5cc9b52160ef702ea")
 
-val nodeVersion by extra("16.0.0")
-val webpackVersion by extra("4.10.0")
-
-buildscript {
-    val kotlinVersion by rootProject.extra("1.8.20")
-    val i18n4kVersion by extra("0.5.0")
-    val mokoVersion by extra("0.22.0")
-
-    repositories {
-        google()
-        mavenCentral()
-        maven { url = uri("https://maven.pkg.jetbrains.space/public/p/compose/dev") }
-        maven {
-            url = uri("https://jitpack.io")
-        }
-        maven {
-            url = uri("https://plugins.gradle.org/m2/")
-        }
-    }
-    dependencies {
-        classpath("org.jetbrains.compose:compose-gradle-plugin:1.4.0")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
-        classpath("com.android.tools.build:gradle:7.4.2")
-        classpath("com.codingfeline.buildkonfig:buildkonfig-gradle-plugin:0.13.3")
-        classpath("dev.icerock.moko:resources-generator:$mokoVersion")
-        classpath("de.comahe.i18n4k:i18n4k-gradle-plugin:$i18n4kVersion")
-        classpath("com.bugsnag:bugsnag-android-gradle-plugin:7.4.0")
-        classpath("org.jetbrains.kotlin:atomicfu:$kotlinVersion")
-        classpath(kotlin("serialization", version = kotlinVersion))
-    }
+plugins {
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.bugsnag.gradle) apply false
+    alias(libs.plugins.buildkonfig) apply false
+    alias(libs.plugins.compose) apply false
+    alias(libs.plugins.conveyor) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.atomicfu) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.moko.resources) apply false
 }
 
-rootProject.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin> {
-    rootProject.the<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootExtension>().nodeVersion = nodeVersion
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    compilerOptions {
+        freeCompilerArgs.addAll("-Xskip-prerelease-check", "-Xdont-warn-on-error-suppression")
+    }
 }
 
 group = groupName
 version = versionName
-
-allprojects {
-    repositories {
-        mavenCentral()
-        google()
-        maven { url = uri("https://maven.pkg.jetbrains.space/public/p/compose/dev") }
-        maven { url = uri("https://maven.pkg.jetbrains.space/public/p/ktor/eap/") }
-        maven {
-            url = uri("https://jitpack.io")
-        }
-        maven {
-            url = uri("https://plugins.gradle.org/m2/")
-        }
-//        maven { url = uri("https://zwander.dev/maven") }
-    }
-
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions {
-            freeCompilerArgs = freeCompilerArgs + listOf("-Xskip-prerelease-check")
-        }
-    }
-}

@@ -1,21 +1,17 @@
 plugins {
-    id("org.jetbrains.compose")
-    id("com.android.application")
-    id("kotlin-android")
-    id("org.jetbrains.kotlin.android")
-    id("dev.icerock.mobile.multiplatform-resources")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.moko.resources)
 }
 
 group = rootProject.extra["groupName"].toString()
 version = rootProject.extra["versionName"].toString()
 
-repositories {
-    google()
-}
-
 dependencies {
-    implementation(project(":commonCompose"))
-    implementation("com.google.android.material:material:1.8.0")
+    implementation(project(":common"))
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
 
 android {
@@ -37,12 +33,15 @@ android {
 
         this.versionCode = versionCode
         this.versionName = versionName
+
+        setProperty("archivesBaseName", "bifrost_android_$versionName")
     }
 
     namespace = packageName
 
     buildFeatures {
         compose = true
+        aidl = true
     }
 
     buildTypes {
@@ -60,6 +59,7 @@ android {
         val javaVersionEnum: JavaVersion by rootProject.extra
         sourceCompatibility = javaVersionEnum
         targetCompatibility = javaVersionEnum
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -70,11 +70,16 @@ android {
         abortOnError = false
     }
 
-    packagingOptions {
+    packaging {
         resources.excludes.add("META-INF/versions/9/previous-compilation-data.bin")
+    }
+
+    androidResources {
+        @Suppress("UnstableApiUsage")
+        generateLocaleConfig = true
     }
 }
 
 multiplatformResources {
-    multiplatformResourcesPackage = "tk.zwander.samloaderkotlin.android" // required
+    resourcesPackage.set("tk.zwander.samloaderkotlin.android")
 }
