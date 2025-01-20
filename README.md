@@ -1,7 +1,19 @@
-# Notice
-Manual firmware downloads and downloading from the firmware history feature have been disabled for now. Samsung changed something on the backend and always serves the latest available firmware, no matter which is requested.
+# Notices
+## Old Firmware
+Samsung may not serve the firmware you request. Early in 2023, Samsung made it so it's only possible to download the latest firmware in most cases, no matter which you request.
 
 If you know a workaround, please follow up on [this issue](https://github.com/zacharee/SamloaderKotlin/issues/10).
+
+## IMEI/Serial Number Requirement
+Samsung now requires a matching IMEI or serial number be sent with firmware requests. If you're downloading firmware for a device on-hand, enter the IMEI or serial from that device.
+
+Otherwise, you can likely find an IMEI by searching "[MODEL] IMEI" in Google. The CSC doesn't seem to matter, only the model and variant.
+
+The U/U1 variants (US/US Unlocked) are interchangeable. An IMEI for the SM-S918U will work to download firmware for the SM-S918U1, for example.
+
+If you know a model and TAC you want added to the database, please [open an issue](https://github.com/zacharee/SamloaderKotlin/issues/new?assignees=&labels=&projects=&template=imei-database-request.md&title=).
+
+Thank you [VanVuong41429](https://github.com/VanVuong41429) for contributing so many TACs!
 
 # Bifrost - Samsung Firmware Downloader
 This is yet another firmware downloader for Samsung devices, but it has some special features.
@@ -15,14 +27,44 @@ Most of the functionality in Bifrost is based on [Samloader](https://github.com/
 Bifrost uses Jetpack Compose, JetBrains Compose for Desktop, and Kotlin Multiplatform to create a shared codebase for all supported platforms.
 
 # Download
-Binaries are available for 64-bit versions Windows, Linux, macOS, and Android. JetBrains Compose can't currently build for 32-bit operating systems.
-
 Check out the [Releases](https://github.com/zacharee/SamloaderKotlin/releases) page for the downloads.
+
+## Platform Compatibility
+
+|               | x86 | x86_64 | ARMv7 | ARM64 |
+|---------------|-----|--------|-------|-------|
+| Windows       | ❌   | ✅      | ❌     | ✅     |
+| macOS         | ❌   | ✅      | ❌     | ✅     |
+| Android       | ✅   | ✅      | ✅     | ✅     |
+| Debian-Based  | ❌   | ✅      | ❌     | ✅     |
+| Generic Linux | ❌   | ✅      | ❌     | ✅     |
+
+## Note for Linux
+Make sure you have at least one of the following font families from each category installed.
+
+### Sans Serif
+- Noto Sans
+- DejaVu Sans
+
+### Serif
+- Noto Serif
+- DejaVu Serif
+- Times New Roman
+
+### Monospace
+- Noto Sans Mono
+- DejaVu Sans Mono
+
+### Cursive
+- Comic Sans MS
 
 # Changelog
 Release notes are available in [CHANGELOG.md](CHANGELOG.md).
 
 # FAQ & Troubleshooting
+
+## Bifrost isn't downloading watch firmware.
+Unfortunately, Samsung doesn't serve the full firmware files for watches, so Bifrost can't download them.
 
 ## Bifrost is returning error 400/401 when downloading
 These errors are on Samsung's end. If you can, try using a different region/CSC.
@@ -69,21 +111,29 @@ Building this project should be fairly easy.
 ## Prep:
 1. Make sure you have the latest [Android Studio Canary](https://developer.android.com/studio/preview) installed.
 2. Clone this project into Android Studio and let it import.
-   
-## Desktop:
-Run the `package` Gradle task.
 
-### Command Line:
-1. Open the Terminal view in Android Studio (bottom-left).
-2. Enter `gradlew createDistributable` on Windows, `./gradlew createDistributable` on Linux, or `./gradlew packageDmg` on macOS.
-3. Once it finishes building, check the output log to see where the executable was saved.
+## Desktop
 
-### GUI:
-1. Go to Android Studio's settings (Ctrl+Alt+S on Windows and Linux, CMD+, on macOS), go to "Experimental", and uncheck "Only include test tasks in the Gradle task list generated during Gradle Sync".
-2. Open the Gradle view in Android Studio (top-right).
-3. Expand the project, then expand "desktop".
-4. Expand "Tasks", then "compose desktop" and double-click "createDistributable" on Windows and Linux, or "packageDmg" on macOS.
-5. Once it finishes building, check the output log to see where the executable was saved.
+### Conveyor
+Bifrost makes use of [Conveyor](https://www.hydraulic.dev/) to create binaries for different desktop platforms.
+
+Conveyor can build for Windows and Linux from any host OS, but macOS is required to build for macOS.
+
+1. To build, first download and install Conveyor from the link above.
+2. Next, open a terminal to the project's root directory.
+3. Run `./gradlew :desktop:build` (`.\gradlew.bat :desktop:build` on Windows).
+4. Run the following command based on your target system.  
+   4.1. Windows: `conveyor make windows-zip`.  
+   4.2. Debian: `conveyor make debian-package`.  
+   4.3. Linux: `conveyor make linux-tarball`.  
+   4.4. Intel Macs: `conveyor -Kapp.machines=mac.amd64 make unnotarized-mac-zip`.  
+   4.5. Apple Silicon Macs: `conveyor -Kapp.machines=mac.arm64 make unnotarized-mac-zip`.
+5. Check the `output` folder in the root of the project for the binary.
+
+### Gradle
+Alternatively, you can run a debug binary by executing the `:desktop:run` task.
+
+`./gradlew :desktop:run` (`.\gradlew :desktop:run` on Windows).
 
 ## Android:
 
@@ -100,71 +150,48 @@ Run the `package` Gradle task.
 
 # Running
 
+## Android
+Download `bifrost_android_<VERSION>.apk` and install it.
+
 ## Windows
+Download the .zip ending in `windows-amd64`.
 
-1. Extract the release ZIP for Windows and go through the folders until you find "Bifrost.exe".
-2. Launch the EXE. If it fails, launch as Administrator.
-
-## Linux
-
-1. Extract the release ZIP for Linux and go through the folders until you find "Bifrost".
-2. Open a terminal in this location.
-3. Enter `chmod +x Bifrost`.
-4. Enter `./Bifrost`.
+Native ARM64 Windows builds aren't currently available.
 
 ## macOS
+- On Intel Macs, download the .zip ending in `mac-amd64`.
+- On Apple Silicon Macs, download the .zip ending in `mac-aarch64`.
 
-1. Extract the release ZIP and open the DMG.
-2. Move "Bifrost.app" to the Applications folder.
-3. Launch the app.
+## Linux
+- On Debian-based systems, download the `.deb` file.
+- On other Linux distros, download the `.tar.gz` file.
 
-There may be a security error when launching the app. If there is, follow the steps outlined [here](https://github.com/hashicorp/terraform/issues/23033#issuecomment-542302933).
-
-Alternatively, if the above doesn't work, you can try running the following in a Terminal (requires root permissions):
-
-`sudo xattr -cr /Applications/Bifrost.app`.
-
-Once that command is executed, the app should run.
-
-It's also possible that the DMG itself will refuse to open. If that happens, the same `xattr` command, but run on the DMG, should work:
-
-`sudo xattr -cr ~/Downloads/Bifrost-<VERSION>.dmg`.
-
-## Android
-
-1. Download the release APK to your phone.
-2. Install and run it.
+On x64 Linux, download the `amd64` variant. On ARM64 Linux, choose `aarch64`.
 
 # Translating
 
-Bifrost supports basic text localization. You can help translate here: https://crowdin.com/project/bifrost-kotlin.
+Bifrost uses Weblate for translations.
 
-Note: Pay special attention to formatting arguments. Numbers inside curly brackets (e.g., `{0}`, `{1}`) should be kept as-is as they will be replaced with text during the application's runtime.
+Help translate Bifrost to your language on the [project page](https://hosted.weblate.org/engage/bifrost/)!
 
-Note: Make sure to keep any other formatting characters as-is (e.g., `\n` should stay as `\n` and `%%` should stay as `%%`).
-
-## Translators:
-
-- Russian: [Leo17032009](https://github.com/Leo17032009)
+<a href="https://hosted.weblate.org/engage/bifrost/">
+<img src="https://hosted.weblate.org/widget/bifrost/strings/multi-auto.svg" alt="Translation status" />
+</a>
 
 # Screenshots
 
 ## Desktop:
 
-![Blank Desktop Downloader](/screenshots/DesktopDownloadViewBlank.png)
-![Blank Desktop Decrypter](/screenshots/DesktopDecrypterViewBlank.png)
-![Blank Desktop History](/screenshots/DesktopHistoryViewBlank.png)
-![Desktop Download Progress](/screenshots/DesktopDownloadViewProgress.png)
-![Desktop Decrypter Progress](/screenshots/DesktopDecrypterViewProgress.png)
-![Desktop History Populated](/screenshots/DesktopHistoryViewPopulated.png)
+<img src="/screenshots/DesktopDownload.png" alt="Desktop Downloader" width="400"></img>
+<img src="/screenshots/DesktopDecrypt.png" alt="Desktop Decrypter" width="400"></img>
+<img src="/screenshots/DesktopHistory.png" alt="Desktop History" width="400"></img>
+<img src="/screenshots/DesktopSettings.png" alt="Desktop Settings" width="400"></img>
 
 ## Mobile:
-![Blank Android Downloader](/screenshots/AndroidDownloaderBlank.png)
-![Blank Android Decrypter](/screenshots/AndroidDecrypterBlank.png)
-![Blank Android History](/screenshots/AndroidHistoryBlank.png)
-![Android Download Progress](/screenshots/AndroidDownloaderProgress.png)
-![Android Decrypter Progress](/screenshots/AndroidDecrypterProgress.png)
-![Android History Populated](/screenshots/AndroidHistoryPopulated.png)
+<img src="/screenshots/AndroidDownload.png" alt="Android Downloader" width="400"></img>
+<img src="/screenshots/AndroidDecrypt.png" alt="Android Decrypter" width="400"></img>
+<img src="/screenshots/AndroidHistory.png" alt="Android History" width="400"></img>
+<img src="/screenshots/AndroidSettings.png" alt="Android Settings" width="400"></img>
 
 # Error Reporting
 Bifrost uses Bugsnag for error reporting.

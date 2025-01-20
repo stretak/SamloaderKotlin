@@ -1,30 +1,37 @@
 package tk.zwander.common.tools
 
-import com.soywiz.korio.serialization.xml.Xml
-import com.soywiz.korio.stream.AsyncInputStream
-import com.soywiz.korio.stream.AsyncOutputStream
-import com.soywiz.korio.util.checksum.CRC32
-import com.soywiz.krypto.AES
-import com.soywiz.krypto.CipherPadding
-import com.soywiz.krypto.MD5
-import com.soywiz.krypto.encoding.Base64
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.DelicateCryptographyApi
+import dev.whyoleg.cryptography.algorithms.AES
+import dev.whyoleg.cryptography.algorithms.MD5
+import io.github.andreypfau.kotlinx.crypto.CRC32
 import io.ktor.utils.io.core.*
-import io.ktor.utils.io.core.internal.*
-import kotlinx.coroutines.*
-import tk.zwander.common.util.Averager
-import kotlin.time.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.io.Sink
+import kotlinx.io.Source
+import kotlinx.io.bytestring.toHexString
+import tk.zwander.common.util.DEFAULT_CHUNK_SIZE
+import tk.zwander.common.util.streamOperationWithProgress
+import tk.zwander.common.util.trackOperationProgress
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Handle encryption and decryption stuff.
  */
-@DangerousInternalIoApi
-@ExperimentalTime
 object CryptUtils {
     /**
      * Decryption keys for the firmware and other data.
      */
-    const val KEY_1 = "hqzdurufm2c8mf6bsjezu1qgveouv7c7"
-    const val KEY_2 = "w13r4cvf4hctaujv"
+    private const val KEY_1 = "vicopx7dqu06emacgpnpy8j8zwhduwlh"
+    private const val KEY_2 = "9u7qab84rpc16gvk"
+
+    @OptIn(DelicateCryptographyApi::class)
+    val md5Provider = CryptographyProvider.Default.get(MD5)
+    val aesCbcProvider = CryptographyProvider.Default.get(AES.CBC)
+    @OptIn(DelicateCryptographyApi::class)
+    val aesEcbProvider = CryptographyProvider.Default.get(AES.ECB)
 
     /**
      * Samsung uses its own padding for its AES
@@ -34,7 +41,7 @@ object CryptUtils {
      * @param d the data to unpad.
      * @return the unpadded data.
      */
-    fun unpad(d: ByteArray): ByteArray {
+    private fun unpad(d: ByteArray): ByteArray {
         val lastByte = d.last().toInt()
         val padIndex = (d.size - (lastByte % d.size))
 
@@ -47,7 +54,7 @@ object CryptUtils {
      * @param d the data to pad.
      * @return the padded data.
      */
-    fun pad(d: ByteArray): ByteArray {
+    private fun pad(d: ByteArray): ByteArray {
         val size = 16 - (d.size % 16)
         val array = ByteArray(size)
 
@@ -64,11 +71,16 @@ object CryptUtils {
      * @param key the key to use for encryption.
      * @return the encrypted data.
      */
-    fun aesEncrypt(input: ByteArray, key: ByteArray): ByteArray {
+    @OptIn(DelicateCryptographyApi::class)
+    private fun aesEncrypt(input: ByteArray, key: ByteArray): ByteArray {
         val paddedInput = pad(input)
         val iv = key.slice(0 until 16).toByteArray()
 
-        return AES.encryptAesCbc(paddedInput, key, iv, CipherPadding.NoPadding)
+        return aesCbcProvider
+            .keyDecoder()
+            .decodeFromByteArrayBlocking(AES.Key.Format.RAW, key)
+            .cipher(padding = false)
+            .encryptWithIvBlocking(iv, paddedInput)
     }
 
     /**
@@ -77,10 +89,17 @@ object CryptUtils {
      * @param key the key to use for decryption.
      * @return the decrypted data.
      */
-    fun aesDecrypt(input: ByteArray, key: ByteArray): ByteArray {
+    @OptIn(DelicateCryptographyApi::class)
+    private fun aesDecrypt(input: ByteArray, key: ByteArray): ByteArray {
         val iv = key.slice(0 until 16).toByteArray()
 
-        return unpad(AES.decryptAesCbc(input, key, iv, CipherPadding.NoPadding))
+        return unpad(
+            aesCbcProvider
+                .keyDecoder()
+                .decodeFromByteArrayBlocking(AES.Key.Format.RAW, key)
+                .cipher(padding = false)
+                .decryptWithIvBlocking(iv, input)
+        )
     }
 
     /**
@@ -88,7 +107,7 @@ object CryptUtils {
      * @param input the input seed.
      * @return the generated key.
      */
-    fun getFKey(input: ByteArray): ByteArray {
+    private fun getFKey(input: ByteArray): ByteArray {
         var key = ""
 
         for (i in 0 until 16) {
@@ -105,11 +124,12 @@ object CryptUtils {
      * @param nonce the nonce seed.
      * @return an auth token based on the nonce.
      */
+    @OptIn(ExperimentalEncodingApi::class)
     fun getAuth(nonce: String): String {
         val keyData = nonce.map { (it.code % 16).toByte() }.toByteArray()
         val fKey = getFKey(keyData)
 
-        return Base64.encode(aesEncrypt(nonce.toByteArray(), fKey))
+        return Base64.Default.encode(aesEncrypt(nonce.toByteArray(), fKey))
     }
 
     /**
@@ -117,48 +137,31 @@ object CryptUtils {
      * @param input the nonce to decrypt.
      * @return the decrypted nonce.
      */
+    @OptIn(ExperimentalEncodingApi::class)
     fun decryptNonce(input: String): String {
-        val d = Base64.decode(input)
+        val d = Base64.Default.decode(input)
         return aesDecrypt(d, KEY_1.toByteArray())
             .decodeToString()
     }
 
     /**
      * Retrieve the decryption key for a .enc4 firmware file.
-     * @param client the [FusClient] instance to use.
      * @param version the firmware string corresponding to the file.
      * @param model the device model corresponding to the file.
      * @param region the device region corresponding to the file.
      * @return the decryption key for this firmware.
      */
-    suspend fun getV4Key(client: FusClient, version: String, model: String, region: String, tries: Int = 0): ByteArray {
-        val request = Request.createBinaryInform(version, model, region, client.getNonce())
-        val response = client.makeReq(FusClient.Request.BINARY_INFORM, request)
-
-        val responseXml = Xml.parse(response)
+    suspend fun getV4Key(version: String, model: String, region: String, imeiSerial: String, tries: Int = 0, includeNonce: Boolean = true): Pair<ByteArray, String>? {
+        val (_, responseXml) = Request.performBinaryInformRetry(version.uppercase(), model, region, imeiSerial, includeNonce)
 
         return try {
-            val fwVer = responseXml.child("FUSBody")
-                ?.child("Results")
-                ?.child("LATEST_FW_VERSION")
-                ?.child("Data")
-                ?.text!!
-
-            val logicVal = responseXml.child("FUSBody")
-                ?.child("Put")
-                ?.child("LOGIC_VALUE_FACTORY")
-                ?.child("Data")
-                ?.text!!
-
-            val decKey = Request.getLogicCheck(fwVer, logicVal)
-
-            return MD5.digest(decKey.toByteArray()).bytes
+            responseXml.extractV4Key()
         } catch (e: Exception) {
             if (tries > 4) {
                 throw e
             } else {
-                client.makeReq(FusClient.Request.GENERATE_NONCE)
-                getV4Key(client, version, model, region, tries + 1)
+                FusClient.makeReq(FusClient.Request.GENERATE_NONCE)
+                getV4Key(version, model, region, imeiSerial, tries + 1)
             }
         }
     }
@@ -170,9 +173,10 @@ object CryptUtils {
      * @param region the device region corresponding to the file.
      * @return the decryption key for this firmware.
      */
-    suspend fun getV2Key(version: String, model: String, region: String): ByteArray {
+    fun getV2Key(version: String, model: String, region: String): Pair<ByteArray, String> {
         val decKey = "${region}:${model}:${version}"
-        return MD5.digest(decKey.toByteArray()).bytes
+
+        return md5Provider.hasher().hashBlocking(decKey.toByteArray()) to decKey
     }
 
     /**
@@ -183,54 +187,29 @@ object CryptUtils {
      * @param length the size of the encrypted file.
      * @param progressCallback a callback to keep track of the progress.
      */
+    @OptIn(DelicateCryptographyApi::class)
     suspend fun decryptProgress(
-        inf: AsyncInputStream,
-        outf: AsyncOutputStream,
+        inf: Source,
+        outf: Sink,
         key: ByteArray,
         length: Long,
-        chunkSize: Int = 0x300000,
-        progressCallback: suspend CoroutineScope.(current: Long, max: Long, bps: Long) -> Unit
+        chunkSize: Int = DEFAULT_CHUNK_SIZE,
+        progressCallback: suspend (current: Long, max: Long, bps: Long) -> Unit,
     ) {
-        withContext(Dispatchers.Default) {
-            val buffer = ByteArray(chunkSize)
+        val cipher = aesEcbProvider.keyDecoder()
+            .decodeFromByteArrayBlocking(AES.Key.Format.RAW, key)
+            .cipher(padding = false)
 
-            var len: Int
-            var count = 0L
-
-            val averager = Averager()
-
-            while (this.isActive) {
-                val nano = measureTime {
-                    len = inf.read(buffer, 0, buffer.size)
-                    count += len
-
-                    if (len > 0) {
-                        val decBlock = AES.decryptAesEcb(buffer.sliceArray(0 until len), key, CipherPadding.NoPadding)
-
-                        outf.write(decBlock, 0, decBlock.size)
-                    }
-                }.inWholeNanoseconds
-
-                if (len <= 0) break
-
-                val lenF = len
-                val totalLenF = count
-
-                async {
-                    averager.update(nano, lenF.toLong())
-                    val (totalTime, totalRead, _) = averager.sum()
-
-                    progressCallback(
-                        totalLenF,
-                        length,
-                        (totalRead / (totalTime.toDouble() / 1_000_000_000.0)).toLong()
-                    )
-                }
-            }
-
-            inf.close()
-            outf.close()
-        }
+        streamOperationWithProgress(
+            input = inf,
+            output = outf,
+            size = length,
+            chunkSize = chunkSize,
+            progressCallback = progressCallback,
+            operation = {
+                cipher.decryptBlocking(it)
+            },
+        )
     }
 
     /**
@@ -242,54 +221,36 @@ object CryptUtils {
      * @return true if the file's CRC32 matches the expected value.
      */
     suspend fun checkCrc32(
-        enc: AsyncInputStream,
+        enc: Source?,
         encSize: Long,
         expected: Long,
-        progressCallback: suspend CoroutineScope.(current: Long, max: Long, bps: Long) -> Unit
+        progressCallback: suspend (current: Long, max: Long, bps: Long) -> Unit,
     ): Boolean {
-        var crcVal = CRC32.initialValue
-
-        coroutineScope {
-            withContext(Dispatchers.Default) {
-                val buffer = ByteArray(0x300000)
-
-                var len: Int
-                var count = 0L
-
-                val averager = Averager()
-
-                while (isActive) {
-                    val nano = measureTime {
-                        len = enc.read(buffer, 0, buffer.size)
-                        count += len
-
-                        if (len > 0) {
-                            crcVal = CRC32.update(crcVal, buffer, 0, len)
-                        }
-                    }.inWholeNanoseconds
-
-                    if (len <= 0) break
-
-                    val lenF = len
-                    val totalLenF = count
-
-                    async {
-                        averager.update(nano, lenF.toLong())
-                        val (totalTime, totalRead, _) = averager.sum()
-
-                        progressCallback(
-                            totalLenF,
-                            encSize,
-                            (totalRead / (totalTime.toDouble() / 1_000_000_000.0)).toLong()
-                        )
-                    }
-                }
-            }
+        if (enc == null) {
+            return false
         }
 
-        enc.close()
+        val buffer = ByteArray(DEFAULT_CHUNK_SIZE)
+        val crc = CRC32()
 
-        return crcVal == expected.toInt()
+        trackOperationProgress(
+            size = encSize,
+            progressCallback = progressCallback,
+            operation = {
+                val len = enc.readAtMostTo(buffer, 0, buffer.size)
+
+                if (len > 0) {
+                    crc.update(buffer, 0, len)
+                }
+                len.toLong()
+            },
+        )
+
+        withContext(Dispatchers.IO) {
+            enc.close()
+        }
+
+        return crc.intDigest() == expected.toInt()
     }
 
     /*
@@ -310,7 +271,7 @@ object CryptUtils {
      * @param updateFile the file to check.
      * @return true if the hashes match.
      */
-    suspend fun checkMD5(md5: String, updateFile: AsyncInputStream?): Boolean {
+    suspend fun checkMD5(md5: String, updateFile: Source?): Boolean {
         if (md5.isBlank() || updateFile == null) {
             return false
         }
@@ -325,22 +286,25 @@ object CryptUtils {
      * @param updateFile the file used to calculate.
      * @return the MD5 hash.
      */
-    suspend fun calculateMD5(updateFile: AsyncInputStream): String? {
-        val md5 = MD5.create()
+    @OptIn(ExperimentalStdlibApi::class)
+    private suspend fun calculateMD5(updateFile: Source): String? {
+        val md5 = md5Provider.hasher().createHashFunction()
         val buffer = ByteArray(8192)
         var read: Int
         return try {
-            while (updateFile.read(buffer, 0, buffer.size).also { read = it } > 0) {
+            while (updateFile.readAvailable(buffer, 0, buffer.size).also { read = it } > 0) {
                 md5.update(buffer, 0, read)
             }
-            val hex = md5.digest().hex
-            val output = hex.padStart(32, '0');
+            val hex = md5.hash().toHexString(format = HexFormat.UpperCase)
+            val output = hex.padStart(32, '0')
             output
         } catch (e: Exception) {
             throw RuntimeException("Unable to process file for MD5", e)
         } finally {
             try {
-                updateFile.close()
+                withContext(Dispatchers.IO) {
+                    updateFile.close()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
